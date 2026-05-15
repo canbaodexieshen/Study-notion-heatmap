@@ -119,7 +119,7 @@ def process_svg_styling(file_path, data_dict, current_year):
         content,
     )
 
-    # 2. 对每个日期格子应用渐变颜色
+    # 2. 对每个日期格子应用渐变颜色，同时更新 title 显示"日期 + 时长"
     # 注意：github_heatmap 生成的日期格子格式为：
     #   <rect fill="..." ...><title>YYYY-MM-DD</title></rect>
     # 背景矩形是自闭合的 <rect ... />，不会被下面的正则匹配到，安全。
@@ -133,6 +133,19 @@ def process_svg_styling(file_path, data_dict, current_year):
         date_str = date_match.group(1)
         val = float(data_dict.get(date_str, 0))
         color = get_color_for_minutes(val)
+        
+        # 更新 <title> 标签，显示"日期 - X 分钟"
+        if val > 0:
+            minutes_text = f"{int(val)} 分钟"
+        else:
+            minutes_text = "无记录"
+        rect_tag = re.sub(
+            r"<title>\d{4}-\d{2}-\d{2}</title>",
+            f"<title>{date_str} - {minutes_text}</title>",
+            rect_tag,
+            count=1
+        )
+        
         # 只替换第一个 fill 属性（格子本身的颜色）
         return re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag, count=1)
 
