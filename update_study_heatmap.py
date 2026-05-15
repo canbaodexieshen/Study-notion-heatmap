@@ -27,7 +27,7 @@ def process_svg_colors(file_path):
 
 def main():
     notion_token = os.getenv("NOTION_TOKEN")
-    database_id = "b6fc37fee47482feb70f817e4fc3e737" # ⚠️ 请确保这里替换为了你真实的32位ID！
+    database_id = os.getenv("NOTION_ID") # ⚠️ 请确保这里替换为了你真实的32位ID！
     current_year = datetime.datetime.now().year
 
     # 1. 生成原始 SVG
