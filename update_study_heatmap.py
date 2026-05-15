@@ -37,7 +37,6 @@ def get_notion_data(token, database_id):
                     for key, value in props.items():
                         if "日期" in key or "Date" in key:
                             date_prop = value
-                        # 💡 核心修改：严格匹配“总时长”，绝不误伤其他类似列！
                         elif key == "总时长":
                             val_prop = value
                             
@@ -49,20 +48,34 @@ def get_notion_data(token, database_id):
                         elif date_prop.get("type") == "title" and date_prop.get("title"):
                             date_val = date_prop["title"][0].get("plain_text")
                             
-                    # 2. 提取数值 (通杀数字、文本、汇总)
+                    # 2. 提取数值 (增强版：专治 null 和 复杂公式)
                     val = 0
+                    is_null_warning = False
+                    
                     if val_prop:
                         ptype = val_prop.get("type")
                         if ptype == "formula":
                             f_data = val_prop.get("formula", {})
                             f_type = f_data.get("type")
+                            
                             if f_type == "number":
-                                val = f_data.get("number")
+                                num_val = f_data.get("number")
+                                if num_val is None:
+                                    is_null_warning = True
+                                else:
+                                    val = num_val
                             elif f_type == "string":  
-                                try:
-                                    val = float(f_data.get("string", 0))
-                                except:
-                                    pass
+                                raw_str = f_data.get("string")
+                                if raw_str is None:
+                                    # 💡 抓到真凶！Notion 传回了真正的 null
+                                    is_null_warning = True
+                                else:
+                                    try:
+                                        val = float(raw_str)
+                                    except (ValueError, TypeError):
+                                        match = re.search(r'(\d+(\.\d+)?)', str(raw_str))
+                                        if match:
+                                            val = float(match.group(1))
                         elif ptype == "number":
                             val = val_prop.get("number")
                         elif ptype == "rollup": 
@@ -74,15 +87,19 @@ def get_notion_data(token, database_id):
                     
                     val = val or 0
                     
-                    # 打印核验日志
+                    # 打印核验日志 (强化诊断版)
                     if debug_counter < 3 and date_val:
                         print("\n=== 🕵️‍♂️ 深度侦察：底层真实数据包 ===")
                         print(f"当前行日期: {date_val}")
-                        if val_prop is None:
-                            print(f"⚠️ 警告：未找到严格名为“总时长”的列！Notion 传回的所有可用列名为: {list(props.keys())}")
+                        print(f"【机密】Notion 传回的该列完整底层数据: {json.dumps(val_prop, ensure_ascii=False)}")
+                        
+                        if is_null_warning:
+                            print("🚨 致命警告：Notion API 传回了 null (空值)！")
+                            print("🚨 原因分析：你的公式大概率引用了其他数据库的数据。")
+                            print("🚨 解决方案：请前往 Notion，把这个机器人(Token)也邀请/连接到被引用的那个底层源数据库中！")
                         else:
-                            print(f"【机密】Notion 传回的该列原始数据: {val_prop.get('type')} 类型")
-                        print(f"【解析】代码强行解析后的结果: {val}")
+                            print(f"【解析】代码强行解析后的结果: {val}")
+                            
                         print("=========================================\n")
                         debug_counter += 1
                     
@@ -143,7 +160,6 @@ def main():
     real_data = get_notion_data(notion_token, database_id)
     current_year = datetime.datetime.now().year
 
-    # 💡 核心修改：将命令行里的 value_prop_name 也改成了严格的 "总时长"
     command = f'github_heatmap notion --notion_token "{notion_token}" --database_id "{database_id}" --date_prop_name "日期" --value_prop_name "总时长" --unit "分钟" --year {current_year} --me "学习热力图" --without-type-name --background-color="#FFFFFF" --track-color="#EBEDF0" --special-color1="#CBE2F9" --special-color2="#8AB4F8" --dom-color="#EBEDF0" --text-color="#000000"'
     
     print("🚀 正在生成基础格子画板...")
