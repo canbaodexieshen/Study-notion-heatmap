@@ -1,0 +1,32 @@
+name: Study Heatmap Engine
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 15 * * *" # 北京时间 23:00
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.9
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install .
+      - name: Generate
+        run: python update_study_heatmap.py
+      - name: Push
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add study_heatmap/
+          git commit -m "Update colored study heatmap" || echo "No changes"
+          git push
