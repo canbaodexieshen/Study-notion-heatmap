@@ -116,4 +116,4 @@ study-notion-heatmap/
 ## 参考
 
 - 热力图引擎：[github-heatmap](https://pypi.org/project/github-heatmap/)
-- 灵感来源：[keep2notion](https://github.com/malinkang/keep2notion)
+- 样式来源：[keep2notion](https://github.com/malinkang/keep2notion)
