@@ -32,14 +32,13 @@ def get_notion_data(token, database_id):
                 for result in res.get("results", []):
                     props = result.get("properties", {})
                     
-                    # 匹配列名
                     date_prop = None
                     val_prop = None
                     for key, value in props.items():
-                        if key.strip() == "日期":
+                        if "日期" in key or "Date" in key:
                             date_prop = value
-                        # ⚠️ 如果你发现数据其实在另一个列里，请把下面的名字改掉！
-                        elif key.strip() == "今日学习总时长(数字)":
+                        # 💡 核心修改：严格匹配“总时长”，绝不误伤其他类似列！
+                        elif key == "总时长":
                             val_prop = value
                             
                     # 1. 提取日期
@@ -50,7 +49,7 @@ def get_notion_data(token, database_id):
                         elif date_prop.get("type") == "title" and date_prop.get("title"):
                             date_val = date_prop["title"][0].get("plain_text")
                             
-                    # 2. 提取数值 (🔥 降维打击：通杀数字、文本、汇总！)
+                    # 2. 提取数值 (通杀数字、文本、汇总)
                     val = 0
                     if val_prop:
                         ptype = val_prop.get("type")
@@ -59,14 +58,14 @@ def get_notion_data(token, database_id):
                             f_type = f_data.get("type")
                             if f_type == "number":
                                 val = f_data.get("number")
-                            elif f_type == "string":  # 如果 Notion 偷偷把它变成了文本
+                            elif f_type == "string":  
                                 try:
                                     val = float(f_data.get("string", 0))
                                 except:
                                     pass
                         elif ptype == "number":
                             val = val_prop.get("number")
-                        elif ptype == "rollup": # 如果它其实是个汇总列
+                        elif ptype == "rollup": 
                             r_data = val_prop.get("rollup", {})
                             if r_data.get("type") == "number":
                                 val = r_data.get("number")
@@ -75,11 +74,14 @@ def get_notion_data(token, database_id):
                     
                     val = val or 0
                     
-                    # 🚨 核武器曝光：打印前 5 个真实有数据的底层包裹
-                    if debug_counter < 5 and date_val:
+                    # 打印核验日志
+                    if debug_counter < 3 and date_val:
                         print("\n=== 🕵️‍♂️ 深度侦察：底层真实数据包 ===")
                         print(f"当前行日期: {date_val}")
-                        print(f"【机密】Notion 传回的该列原始数据: {val_prop}")
+                        if val_prop is None:
+                            print(f"⚠️ 警告：未找到严格名为“总时长”的列！Notion 传回的所有可用列名为: {list(props.keys())}")
+                        else:
+                            print(f"【机密】Notion 传回的该列原始数据: {val_prop.get('type')} 类型")
                         print(f"【解析】代码强行解析后的结果: {val}")
                         print("=========================================\n")
                         debug_counter += 1
@@ -141,6 +143,7 @@ def main():
     real_data = get_notion_data(notion_token, database_id)
     current_year = datetime.datetime.now().year
 
+    # 💡 核心修改：将命令行里的 value_prop_name 也改成了严格的 "总时长"
     command = f'github_heatmap notion --notion_token "{notion_token}" --database_id "{database_id}" --date_prop_name "日期" --value_prop_name "总时长" --unit "分钟" --year {current_year} --me "学习热力图" --without-type-name --background-color="#FFFFFF" --track-color="#EBEDF0" --special-color1="#CBE2F9" --special-color2="#8AB4F8" --dom-color="#EBEDF0" --text-color="#000000"'
     
     print("🚀 正在生成基础格子画板...")
