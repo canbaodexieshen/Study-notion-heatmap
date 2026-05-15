@@ -15,7 +15,7 @@ TITLE = "残暴的邪神的学习热力图"
 # ==========================================
 
 def get_and_save_notion_data():
-    """第一步：从 Notion 提取数据并保存为本地 JSON"""
+    """第一步：数据提取逻辑（已验证成功，保持不动）"""
     print(f"🔍 正在从 Notion 提取 {YEAR} 年的真实数据...")
     url = f"https://api.notion.com/v1/databases/{DATABASE_ID}/query"
     headers = {
@@ -36,14 +36,10 @@ def get_and_save_notion_data():
                 res = json.loads(response.read())
                 for result in res.get("results", []):
                     props = result.get("properties", {})
-                    
-                    # 1. 提取日期
                     date_val = None
-                    date_prop = props.get("日期")
-                    if date_prop and date_prop.get("date"):
-                        date_val = date_prop["date"].get("start")
+                    if props.get("日期") and props["日期"].get("date"):
+                        date_val = props["日期"]["date"].get("start")
                     
-                    # 2. 提取时长 (公式列兼容逻辑)
                     val = 0
                     val_prop = props.get("总时长")
                     if val_prop:
@@ -68,58 +64,53 @@ def get_and_save_notion_data():
             print(f"❌ 数据获取失败: {e}")
             sys.exit(1)
             
-    # 保存为本地 JSON 文件，供 github_heatmap 绘图使用
     with open(JSON_FILE, 'w', encoding='utf-8') as f:
         json.dump(data_dict, f)
     
-    print(f"✅ 数据提取成功！已保存至 {JSON_FILE}，共 {len(data_dict)} 条有效记录。")
+    print(f"✅ 数据提取成功！共 {len(data_dict)} 条有效记录。")
     return data_dict
 
-def draw_heatmap_generic():
-    """第二步：利用 github_heatmap 的 generic 模式绘图"""
-    print("🚀 正在调用 github_heatmap 通用模式绘制底板...")
+def draw_heatmap_json():
+    """第二步：核心修复！使用 json 子命令"""
+    print("🚀 正在调用 github_heatmap json 模式绘制底板...")
     
-    # 注意：这里改用 generic 子命令，指定 --json_file
+    # 💡 关键修改：将 generic 替换为 json
     command = [
-        "github_heatmap", "generic",
+        "github_heatmap", "json",
         "--json_file", JSON_FILE,
         "--year", str(YEAR),
         "--me", TITLE,
         "--unit", "分钟",
         "--without-type-name",
         "--background-color", "#FFFFFF",
-        "--track-color", "#EBEDF0",  # 显式指定灰色方块
+        "--track-color", "#EBEDF0", 
         "--dom-color", "#EBEDF0",
         "--text-color", "#000000"
     ]
     
     try:
         subprocess.run(command, check=True)
-        print("🎨 原生底板（The Track）已成功铺设。")
     except subprocess.CalledProcessError as e:
-        print(f"❌ 绘图引擎执行失败: {e}")
+        print(f"❌ 绘图引擎执行失败，请确认是否安装了 github-heatmap: {e}")
         sys.exit(1)
 
 def apply_color_gradient(data_dict):
-    """第三步：在原生底板上精准注入渐变色和统计文字"""
+    """第三步：颜色注入逻辑（保持不动）"""
     print("💉 正在执行最终的渐变色注入...")
-    svg_path = "OUT_FOLDER/notion.svg"
-    if not os.path.exists(svg_path):
-        # 尝试通用模式可能的默认路径
-        svg_path = "OUT_FOLDER/generic.svg" 
+    # 注意：json 命令生成的默认文件名可能是 json.svg
+    possible_paths = ["OUT_FOLDER/json.svg", "OUT_FOLDER/notion.svg"]
+    svg_path = next((p for p in possible_paths if os.path.exists(p)), None)
     
-    if not os.path.exists(svg_path):
-        print("❌ 未找到生成的 SVG 文件，请检查 OUT_FOLDER 目录。")
+    if not svg_path:
+        print("❌ 未找到生成的 SVG 文件。")
         return
 
     with open(svg_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # 更新顶部统计文字
     total_minutes = int(sum(data_dict.values()))
     content = re.sub(rf'({YEAR}:\s*)[0\.\d]+(\s*分钟)', rf'\g<1>{total_minutes}\g<2>', content)
 
-    # 渐变插值辅助函数
     def interpolate(c1, c2, f):
         c1_v = [int(c1[i:i+2], 16) for i in (1, 3, 5)]
         c2_v = [int(c2[i:i+2], 16) for i in (1, 3, 5)]
@@ -135,7 +126,7 @@ def apply_color_gradient(data_dict):
         val = float(data_dict.get(date_str, 0))
         
         if val == 0:
-            color = "#EBEDF0" # 无数据日期的标准灰
+            color = "#EBEDF0"
         elif val <= 240:
             color = interpolate("#E0E7FF", "#93C5FD", val / 240.0)
         elif val <= 480:
@@ -147,27 +138,22 @@ def apply_color_gradient(data_dict):
 
     content = re.sub(r'<rect\b[^>]*>.*?</rect>', rect_replacer, content, flags=re.DOTALL)
     
-    # 强制背景层
     if 'style=' not in content:
         content = content.replace('<svg ', '<svg style="background-color:white;" ', 1)
 
     with open(svg_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
-    # 移动文件
     os.makedirs("study_heatmap", exist_ok=True)
     os.replace(svg_path, "study_heatmap/main.svg")
-    print("🎉 任务圆满完成！请查看 study_heatmap/main.svg")
+    print("🎉 任务圆满完成！")
 
 def main():
-    # 检查环境变量
     if not NOTION_TOKEN or not DATABASE_ID:
         print("❌ 错误：环境变量未配置！")
         return
-
-    # 执行三步走方案
     data = get_and_save_notion_data()
-    draw_heatmap_generic()
+    draw_heatmap_json()
     apply_color_gradient(data)
 
 if __name__ == "__main__":
