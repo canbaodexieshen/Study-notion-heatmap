@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: "0 15 * * *" # 北京时间 23:00
 
-# 👇 核心修复 1：正式授予 GitHub Actions 机器人修改/推送代码的权限！
+# 正式授予机器人推送文件的权限
 permissions:
   contents: write
 
@@ -14,9 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TZ: Asia/Shanghai
+      # 映射我们在 Secrets 里配置的两个密钥
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-      
-      # 👇 核心修复 2：把你在 Secret 里藏好的 ID，作为环境变量传给 Python
       NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
       
     steps:
