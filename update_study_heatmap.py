@@ -7,10 +7,11 @@ import urllib.request
 import json
 
 
-# =========================
-# Notion 数据获取
-# =========================
+# ==========================================
+# 从 Notion 获取真实数据
+# ==========================================
 def get_notion_data(token, database_id):
+
     print("🔍 正在读取 Notion 数据...")
 
     url = f"https://api.notion.com/v1/databases/{database_id}/query"
@@ -49,9 +50,9 @@ def get_notion_data(token, database_id):
 
                     props = result.get("properties", {})
 
-                    # ======================
-                    # 日期
-                    # ======================
+                    # ==========================
+                    # 日期属性
+                    # ==========================
                     date_prop = props.get("日期")
 
                     if not date_prop:
@@ -62,46 +63,61 @@ def get_notion_data(token, database_id):
 
                     date_str = date_prop["date"]["start"].split("T")[0]
 
-                    # ======================
-                    # 总时长
-                    # ======================
-                    value = 0
-
+                    # ==========================
+                    # 总时长属性
+                    # ==========================
                     total_prop = props.get("总时长")
+
+                    value = 0
 
                     if total_prop:
 
                         ptype = total_prop.get("type")
 
+                        # 数字属性
                         if ptype == "number":
+
                             value = total_prop.get("number") or 0
 
+                        # 公式属性
                         elif ptype == "formula":
 
                             formula = total_prop.get("formula", {})
 
-                            if formula.get("type") == "number":
+                            ftype = formula.get("type")
+
+                            # 公式输出 number
+                            if ftype == "number":
+
                                 value = formula.get("number") or 0
 
-                            elif formula.get("type") == "string":
+                            # 公式输出 string
+                            elif ftype == "string":
 
                                 text = str(formula.get("string", ""))
 
-                                match = re.search(r"(\d+(\.\d+)?)", text)
+                                match = re.search(
+                                    r"(\d+(\.\d+)?)",
+                                    text
+                                )
 
                                 if match:
                                     value = float(match.group(1))
 
-                    # ======================
-                    # 累加同一天
-                    # ======================
+                    # ==========================
+                    # 累加同一天数据
+                    # ==========================
                     if value > 0:
-                        data_dict[date_str] = data_dict.get(date_str, 0) + value
+
+                        data_dict[date_str] = (
+                            data_dict.get(date_str, 0) + value
+                        )
 
                 has_more = res.get("has_more", False)
                 next_cursor = res.get("next_cursor")
 
         except Exception as e:
+
             print(f"❌ Notion 数据获取失败: {e}")
             sys.exit(1)
 
@@ -113,112 +129,46 @@ def get_notion_data(token, database_id):
     return data_dict
 
 
-# =========================
-# GitHub 原生色阶
-# =========================
-def get_color(value):
+# ==========================================
+# 修复 SVG 空白格子
+# ==========================================
+def process_svg(svg_path):
 
-    if value <= 0:
-        return "#ebedf0"
-
-    elif value <= 120:
-        return "#9be9a8"
-
-    elif value <= 300:
-        return "#40c463"
-
-    elif value <= 600:
-        return "#30a14e"
-
-    else:
-        return "#216e39"
-
-
-# =========================
-# SVG 修复核心
-# =========================
-def process_svg(svg_path, data_dict, current_year):
-
-    print("🎨 正在渲染 GitHub 风格热力图...")
+    print("🎨 正在修复热力图空白格子...")
 
     with open(svg_path, "r", encoding="utf-8") as f:
         svg = f.read()
 
-    total_minutes = int(sum(data_dict.values()))
-
-    # =========================
-    # 修复顶部总时长
-    # =========================
-    svg = re.sub(
-        rf"{current_year}:\s*\d+\s*分钟",
-        f"{current_year}: {total_minutes} 分钟",
-        svg
-    )
-
-    # =========================
-    # rect 处理
-    # =========================
-    rect_pattern = r'<rect\b[^>]*/>'
-
-    def replace_rect(match):
+    # ==========================================
+    # 给没有 fill 的 rect 自动补灰色
+    # ==========================================
+    def fix_rect(match):
 
         rect_tag = match.group(0)
 
-        # 找日期
-        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', rect_tag)
-
-        if not date_match:
+        # 已经有 fill（说明已有数据颜色）
+        if 'fill="' in rect_tag:
             return rect_tag
 
-        date_str = date_match.group(1)
-
-        value = float(data_dict.get(date_str, 0))
-
-        color = get_color(value)
-
-        # 替换 fill
-        if 'fill="' in rect_tag:
-
-            rect_tag = re.sub(
-                r'fill="[^"]*"',
-                f'fill="{color}"',
-                rect_tag
-            )
-
-        else:
-
-            rect_tag = rect_tag.replace(
-                "<rect ",
-                f'<rect fill="{color}" ',
-                1
-            )
-
-        # title
-        title = f"{date_str}: {int(value)} 分钟"
-
-        if "<title>" in rect_tag:
-
-            rect_tag = re.sub(
-                r'<title>.*?</title>',
-                f'<title>{title}</title>',
-                rect_tag
-            )
-
-        else:
-
-            rect_tag = rect_tag.replace(
-                "/>",
-                f'><title>{title}</title></rect>'
-            )
+        # 没有 fill -> 补 GitHub 原生灰色
+        rect_tag = rect_tag.replace(
+            "<rect ",
+            '<rect fill="#ebedf0" ',
+            1
+        )
 
         return rect_tag
 
-    svg = re.sub(rect_pattern, replace_rect, svg)
+    svg = re.sub(
+        r'<rect\b[^>]*/>',
+        fix_rect,
+        svg
+    )
 
-    # =========================
-    # SVG 背景
-    # =========================
-    if "<svg" in svg and "background-color" not in svg:
+    # ==========================================
+    # 强制 SVG 白色背景
+    # ==========================================
+    if "background-color" not in svg:
 
         svg = svg.replace(
             "<svg ",
@@ -226,15 +176,18 @@ def process_svg(svg_path, data_dict, current_year):
             1
         )
 
+    # ==========================================
+    # 保存 SVG
+    # ==========================================
     with open(svg_path, "w", encoding="utf-8") as f:
         f.write(svg)
 
-    print("✅ SVG 渲染完成")
+    print("✅ SVG 修复完成")
 
 
-# =========================
+# ==========================================
 # 主程序
-# =========================
+# ==========================================
 def main():
 
     notion_token = os.getenv("NOTION_TOKEN")
@@ -242,25 +195,31 @@ def main():
 
     current_year = datetime.datetime.now().year
 
+    # ==========================================
+    # 环境变量检查
+    # ==========================================
     if not notion_token:
-        print("❌ 缺少 NOTION_TOKEN")
+
+        print("❌ 缺少环境变量 NOTION_TOKEN")
         sys.exit(1)
 
     if not database_id:
-        print("❌ 缺少 NOTION_DATABASE_ID")
+
+        print("❌ 缺少环境变量 NOTION_DATABASE_ID")
         sys.exit(1)
 
-    # =========================
-    # 获取真实数据
-    # =========================
-    real_data = get_notion_data(
+    # ==========================================
+    # 验证 Notion 数据
+    # （确保数据真实存在）
+    # ==========================================
+    get_notion_data(
         notion_token,
         database_id
     )
 
-    # =========================
-    # 生成热力图骨架
-    # =========================
+    # ==========================================
+    # 调用 github_heatmap
+    # ==========================================
     command = [
         "github_heatmap",
         "notion",
@@ -277,11 +236,11 @@ def main():
         "--value_prop_name",
         "总时长",
 
-        "--year",
-        str(current_year),
-
         "--unit",
         "分钟",
+
+        "--year",
+        str(current_year),
 
         "--me",
         "残暴的邪神的运动热力图",
@@ -301,18 +260,23 @@ def main():
         "#000000"
     ]
 
-    print("🚀 正在生成热力图骨架...")
+    print("🚀 正在生成 GitHub 热力图...")
 
     try:
-        subprocess.run(command, check=True)
+
+        subprocess.run(
+            command,
+            check=True
+        )
 
     except subprocess.CalledProcessError as e:
+
         print(f"❌ github_heatmap 执行失败: {e}")
         sys.exit(1)
 
-    # =========================
-    # SVG 路径
-    # =========================
+    # ==========================================
+    # github_heatmap 输出路径
+    # ==========================================
     svg_path = "OUT_FOLDER/notion.svg"
 
     if not os.path.exists(svg_path):
@@ -320,27 +284,35 @@ def main():
         print("❌ 未找到生成的 SVG 文件")
         sys.exit(1)
 
-    # =========================
-    # 强制渲染 GitHub 风格
-    # =========================
-    process_svg(
-        svg_path,
-        real_data,
-        current_year
-    )
+    # ==========================================
+    # 修复空白格子
+    # ==========================================
+    process_svg(svg_path)
 
-    # =========================
-    # 输出目录
-    # =========================
-    os.makedirs("study_heatmap", exist_ok=True)
+    # ==========================================
+    # 输出最终文件
+    # ==========================================
+    os.makedirs(
+        "study_heatmap",
+        exist_ok=True
+    )
 
     final_path = "study_heatmap/main.svg"
 
-    os.replace(svg_path, final_path)
+    if os.path.exists(final_path):
+        os.remove(final_path)
+
+    os.replace(
+        svg_path,
+        final_path
+    )
 
     print("🎉 热力图生成成功")
     print(f"📁 输出文件: {final_path}")
 
 
+# ==========================================
+# 程序入口
+# ==========================================
 if __name__ == "__main__":
     main()
