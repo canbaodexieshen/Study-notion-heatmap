@@ -2,6 +2,7 @@ import os
 import subprocess
 import datetime
 import re
+import sys
 
 def process_svg_colors(file_path):
     """核心逻辑：根据 SVG 中的数据提示重新着色"""
@@ -26,11 +27,21 @@ def process_svg_colors(file_path):
         f.write(new_content)
 
 def main():
+    # 安全地从系统环境变量中读取配置
     notion_token = os.getenv("NOTION_TOKEN")
-    database_id = os.getenv("NOTION_PAGE") # ⚠️ 请确保这里替换为了你真实的32位ID！
+    database_id = os.getenv("NOTION_DATABASE_ID")
+
+    # 🛑 强制安全校验：如果漏配置了密钥，直接拦截并给出中文提示
+    if not notion_token:
+        print("❌ 致命错误：未找到 NOTION_TOKEN！请确保已在 GitHub Secrets 中配置，并在 yml 文件的 env 中映射。")
+        sys.exit(1)
+    if not database_id:
+        print("❌ 致命错误：未找到 NOTION_DATABASE_ID！请确保已在 GitHub Secrets 中配置，并在 yml 文件的 env 中映射。")
+        sys.exit(1)
+
     current_year = datetime.datetime.now().year
 
-    # 1. 生成原始 SVG
+    # 组装命令，全程绝不暴露明文 ID
     command = [
         "github_heatmap", "notion",
         "--notion_token", notion_token,
@@ -42,19 +53,21 @@ def main():
         "--me", "学习热力图",
         "--without-type-name"
     ]
-    subprocess.run(" ".join(command), shell=True)
+    
+    print("🚀 开始请求 Notion 数据并生成热力图...")
+    subprocess.run(" ".join(command), shell=True, check=True)
 
-    # 2. 对生成的 notion.svg 进行后处理着色
+    # 处理颜色逻辑
     svg_path = "OUT_FOLDER/notion.svg"
     if os.path.exists(svg_path):
         process_svg_colors(svg_path)
-        
-        # 3. 移动并改名
         os.makedirs("study_heatmap", exist_ok=True)
-        os.rename(svg_path, "study_heatmap/main.svg")
-        print("学习热力图已生成并重新着色完成！")
+        # 使用 replace 避免文件已存在时重命名报错
+        os.replace(svg_path, "study_heatmap/main.svg")
+        print("✅ 学习热力图已生成并重新着色完成！")
     else:
-        print("错误：未找到生成的 notion.svg 文件。")
+        print("❌ 错误：未在 OUT_FOLDER 找到生成的 notion.svg 文件。")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
