@@ -5,14 +5,16 @@ import re
 import sys
 
 def process_svg_colors(file_path):
-    """核心逻辑：精准捕获 SVG 并重新着色"""
+    """核心逻辑：不依赖单位，直接提取数字进行着色"""
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
     def color_replacer(match):
         rect_tag = match.group(0)
-        # 提取方块里记录的“分钟”数据
-        val_match = re.search(r'(\d+\.?\d*)\s*分钟', rect_tag)
+        
+        # 🛡️ 升级版雷达：直接寻找 <title>YYYY-MM-DD 数字 的格式，无论有没有单位都能精准捕获！
+        val_match = re.search(r'<title>\s*\d{4}-\d{2}-\d{2}\s+(\d+\.?\d*)', rect_tag)
+        
         if val_match:
             val = float(val_match.group(1))
             # 你的专属多色判定逻辑：
@@ -22,14 +24,14 @@ def process_svg_colors(file_path):
                 color = "#D1D5DB"  # <4h：灰色
                 rect_tag = re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
             elif val < 480:
-                color = "#3B82F6"  # 4~8h：蓝色 (包含 4~6h)
+                color = "#3B82F6"  # 4~8h：蓝色
                 rect_tag = re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
             else:
                 color = "#10B981"  # ≥8h：绿色
                 rect_tag = re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
         return rect_tag
 
-    # 修复盲区：完美匹配所有形态的 <rect> 方块标签
+    # 扫描并替换所有的方块标签
     new_content = re.sub(r'<rect\b[^>]*>(?:.*?<\/rect>)?', color_replacer, content, flags=re.DOTALL)
     
     with open(file_path, 'w', encoding='utf-8') as f:
@@ -39,28 +41,24 @@ def main():
     notion_token = os.getenv("NOTION_TOKEN")
     database_id = os.getenv("NOTION_DATABASE_ID")
 
-    # 安全检查
     if not notion_token or not database_id:
         print("❌ 致命错误：未找到 NOTION_TOKEN 或 NOTION_DATABASE_ID！")
         sys.exit(1)
 
     current_year = datetime.datetime.now().year
 
-    # 修复断层：为所有参数加上严格的双引号，确保强制画出纯白底色和灰色空格
+    # 🛡️ 修复了 -unit 为 --unit，并加上了严格的双引号
     command = f'github_heatmap notion --notion_token "{notion_token}" --database_id "{database_id}" --date_prop_name "日期" --value_prop_name "今日学习总时长(数字)" --unit "分钟" --year {current_year} --me "学习热力图" --without-type-name --background-color="#FFFFFF" --track-color="#EBEDF0" --special-color1="#CBE2F9" --special-color2="#8AB4F8" --dom-color="#EBEDF0" --text-color="#000000"'
     
     print("🚀 开始请求 Notion 数据并生成基础热力图...")
-    
-    # 增加雷达反馈：如果失败，精准打印原因
     try:
         result = subprocess.run(command, shell=True, check=True, text=True, capture_output=True)
-        print("✅ 基础生成成功：\n", result.stdout)
+        print("✅ 基础生成成功！")
     except subprocess.CalledProcessError as e:
-        print(f"❌ 基础命令执行失败！错误代码：{e.returncode}")
+        print(f"❌ 基础命令执行失败！请检查 Notion 机器人是否已邀请进数据库！")
         print(f"❌ 错误详细日志：\n{e.stderr}")
         sys.exit(1)
 
-    # 给方块重新判定上色
     svg_path = "OUT_FOLDER/notion.svg"
     if os.path.exists(svg_path):
         process_svg_colors(svg_path)
