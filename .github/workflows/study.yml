@@ -5,13 +5,20 @@ on:
   schedule:
     - cron: "0 15 * * *" # 北京时间 23:00
 
+# 👇 核心修复 1：正式授予 GitHub Actions 机器人修改/推送代码的权限！
+permissions:
+  contents: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
     env:
       TZ: Asia/Shanghai
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-      NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
+      
+      # 👇 核心修复 2：把你在 Secret 里藏好的 ID，作为环境变量传给 Python
+      NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,7 +29,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install github-heatmap
-          # (这里直接安装画图的核心工具 github-heatmap，彻底抛弃本地安装，极其稳定)
 
       - name: Generate
         run: python update_study_heatmap.py
