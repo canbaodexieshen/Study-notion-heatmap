@@ -90,8 +90,8 @@
         }
 
         /* ==================== 智能深色模式 ==================== */
-        /* 策略：不使用整体反色滤镜（会破坏蓝绿渐变），
-           而是通过 CSS 属性选择器精准替换 SVG 内部各颜色 */
+        /* 采用 keep2Notion 项目的智能反色滤镜策略：
+           保留绿色方块的色彩感知，同时让空白格正常显示 */
 
         body.dark-mode {
             background-color: #191919;
@@ -115,22 +115,9 @@
             background-color: #383838;
         }
 
-        /* 1. 空白格（原 #ebedf0 / #EBEDF0 / 白色背景）→ 深灰 */
-        body.dark-mode svg rect[fill="#ebedf0"],
-        body.dark-mode svg rect[fill="#EBEDF0"],
-        body.dark-mode svg rect[fill="#FFFFFF"],
-        body.dark-mode svg rect[fill="#ffffff"] {
-            fill: #2d2d2d !important;
-        }
-
-        /* 2. SVG 文字（月份 / 星期 / 统计）→ 浅灰，防止看不见 */
-        body.dark-mode svg text {
-            fill: #aaaaaa !important;
-        }
-
-        /* 3. 轻微压暗整体，让渐变在夜间不那么刺眼 */
+        /* 智能反色滤镜：保留绿色方块的色彩感知，空白格正常显示 */
         body.dark-mode svg {
-            filter: brightness(0.88);
+            filter: invert(0.9) hue-rotate(180deg) brightness(1.1);
         }
     </style>
 </head>
