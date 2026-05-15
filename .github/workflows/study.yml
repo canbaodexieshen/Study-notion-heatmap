@@ -17,12 +17,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.9
-      - name: Install
+      
+      - name: Install Dependencies
         run: |
-          pip install -r requirements.txt
-          pip install .
+          python -m pip install --upgrade pip
+          pip install github-heatmap
+          # (这里直接安装画图的核心工具 github-heatmap，彻底抛弃本地安装，极其稳定)
+
       - name: Generate
         run: python update_study_heatmap.py
+
       - name: Push
         run: |
           git config --local user.email "action@github.com"
