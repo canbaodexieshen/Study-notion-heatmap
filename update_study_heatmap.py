@@ -8,14 +8,10 @@ import json
 
 def interpolate_color(color1, color2, factor):
     """【色彩魔法引擎】根据学习时长的百分比，计算出最完美的渐变色"""
-    # 确保因子在 0 到 1 之间
     factor = max(0.0, min(1.0, factor))
-    # 将十六进制颜色拆解为 RGB 数值
     c1 = [int(color1[i:i+2], 16) for i in (1, 3, 5)]
     c2 = [int(color2[i:i+2], 16) for i in (1, 3, 5)]
-    # 按比例混合颜色
     c3 = [int(c1[i] + (c2[i] - c1[i]) * factor) for i in range(3)]
-    # 重新组合成十六进制颜色代码
     return f"#{c3[0]:02x}{c3[1]:02x}{c3[2]:02x}"
 
 def get_notion_data(token, database_id):
@@ -48,7 +44,8 @@ def get_notion_data(token, database_id):
                     for key, value in props.items():
                         if "日期" in key or "Date" in key:
                             date_prop = value
-                        elif key == "总时长":
+                        # 模糊匹配：只要列名里有学习和数字就能抓到
+                        elif "学习" in key and "数字" in key:
                             val_prop = value
                             
                     # 1. 提取日期
@@ -59,14 +56,13 @@ def get_notion_data(token, database_id):
                         elif date_prop.get("type") == "title" and date_prop.get("title"):
                             date_val = date_prop["title"][0].get("plain_text")
                             
-                    # 2. 提取数值
+                    # 2. 提取数值 (兼容公式、数字、文本)
                     val = 0
                     if val_prop:
                         ptype = val_prop.get("type")
                         if ptype == "formula":
                             f_data = val_prop.get("formula", {})
                             f_type = f_data.get("type")
-                            
                             if f_type == "number":
                                 num_val = f_data.get("number")
                                 if num_val is not None:
@@ -101,13 +97,14 @@ def get_notion_data(token, database_id):
             print("❌ 官方 Notion API 请求失败:", e)
             sys.exit(1)
             
-    print(f"✅ 成功获取了 {len(data_dict)} 天的有效学习记录！准备开始注入颜料...")
+    print(f"✅ 成功获取了 {len(data_dict)} 天的有效学习记录！")
     return data_dict
 
-def process_svg_colors(file_path, data_dict):
+def process_svg_colors(file_path, data_dict, current_year):
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
+    # --- 1. 方块颜色与悬停提示的替换 ---
     def rect_replacer(match):
         rect_tag = match.group(0)
         date_match = re.search(r'(\d{4}-\d{2}-\d{2})', rect_tag)
@@ -117,9 +114,9 @@ def process_svg_colors(file_path, data_dict):
         date_str = date_match.group(1)
         val = float(data_dict.get(date_str, 0))
         
-        # 🔥 核心：高级色彩渐变逻辑
+        # 🔥 核心渐变逻辑
         if val == 0:
-            color = "#EBEDF0" # 原生浅灰底板
+            color = "#EBEDF0" # 空白底色
         elif val < 240:
             # 0~4小时阶梯：浅灰(#E5E7EB) 到 深灰(#9CA3AF)
             factor = val / 240.0
@@ -129,8 +126,7 @@ def process_svg_colors(file_path, data_dict):
             factor = (val - 240) / 240.0
             color = interpolate_color("#93C5FD", "#1D4ED8", factor)
         else:
-            # 8小时以上阶梯：薄荷绿(#6EE7B7) 到 墨绿(#047857)
-            # 我们设定12小时(720分钟)为满色，超过12小时统一显示最深的墨绿色
+            # 8小时以上阶梯：薄荷绿(#6EE7B7) 到 墨绿(#047857) (满血为12小时)
             factor = min((val - 480) / 240.0, 1.0)
             color = interpolate_color("#6EE7B7", "#047857", factor)
             
@@ -141,6 +137,15 @@ def process_svg_colors(file_path, data_dict):
         return rect_tag
 
     new_content = re.sub(r'<rect\b[^>]*>.*?</rect>', rect_replacer, content, flags=re.DOTALL)
+    
+    # --- 2. 霸气副标题覆盖逻辑（计算真正的总时长） ---
+    total_val = int(sum(data_dict.values()))
+    # 强行寻找底层工具生成的类似 "2026: 0 分钟" 的文本，将其替换为真正的总时长
+    new_content = re.sub(
+        rf'(<text[^>]*>{current_year}:).*?(</text>)', 
+        rf'\g<1> {total_val} 分钟\g<2>', 
+        new_content
+    )
     
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
@@ -153,21 +158,24 @@ def main():
         print("❌ 致命错误：未找到 NOTION_TOKEN 或 NOTION_DATABASE_ID！")
         sys.exit(1)
 
+    # 从 Notion 提取最真实的分钟数
     real_data = get_notion_data(notion_token, database_id)
     current_year = datetime.datetime.now().year
 
-    # 我们通过指定圆润的样式颜色，生成最美观的底板（让 GitHub 原生工具只管排版和画格子）
-    command = f'github_heatmap notion --notion_token "{notion_token}" --database_id "{database_id}" --date_prop_name "日期" --value_prop_name "总时长" --unit "分钟" --year {current_year} --me "学习热力图" --without-type-name --background-color="#FFFFFF" --track-color="#EBEDF0" --special-color1="#CBE2F9" --special-color2="#8AB4F8" --dom-color="#EBEDF0" --text-color="#000000"'
+    # 🔥 复刻排版：在这里指定了霸气标题 "--me '残暴的邪神的学习热力图'"
+    # 同时统一了底板颜色格式
+    command = f'github_heatmap notion --notion_token "{notion_token}" --database_id "{database_id}" --date_prop_name "日期" --value_prop_name "今日学习总时长(数字)" --unit "分钟" --year {current_year} --me "残暴的邪神的学习热力图" --without-type-name --background-color="#FFFFFF" --track-color="#EBEDF0" --special-color1="#CBE2F9" --special-color2="#8AB4F8" --dom-color="#EBEDF0" --text-color="#000000"'
     
-    print("🚀 正在生成基础格子画板...")
+    print("🚀 正在生成带有完美排版的基础画板...")
     subprocess.run(command, shell=True, check=True, capture_output=True)
 
     svg_path = "OUT_FOLDER/notion.svg"
     if os.path.exists(svg_path):
-        process_svg_colors(svg_path, real_data)
+        # 强行将真实的色彩和副标题泼到画板上
+        process_svg_colors(svg_path, real_data, current_year)
         os.makedirs("study_heatmap", exist_ok=True)
         os.replace(svg_path, "study_heatmap/main.svg")
-        print("🎉 高级渐变色学习热力图着色完成！")
+        print("🎉 高级渐变色学习热力图排版与着色完美完成！")
     else:
         print("❌ 错误：未在 OUT_FOLDER 找到画板文件。")
 
