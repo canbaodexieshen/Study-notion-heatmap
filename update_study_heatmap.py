@@ -6,6 +6,18 @@ import sys
 import urllib.request
 import json
 
+def interpolate_color(color1, color2, factor):
+    """【色彩魔法引擎】根据学习时长的百分比，计算出最完美的渐变色"""
+    # 确保因子在 0 到 1 之间
+    factor = max(0.0, min(1.0, factor))
+    # 将十六进制颜色拆解为 RGB 数值
+    c1 = [int(color1[i:i+2], 16) for i in (1, 3, 5)]
+    c2 = [int(color2[i:i+2], 16) for i in (1, 3, 5)]
+    # 按比例混合颜色
+    c3 = [int(c1[i] + (c2[i] - c1[i]) * factor) for i in range(3)]
+    # 重新组合成十六进制颜色代码
+    return f"#{c3[0]:02x}{c3[1]:02x}{c3[2]:02x}"
+
 def get_notion_data(token, database_id):
     print("🔍 正在启动原生引擎，直接读取 Notion 数据库...")
     url = f"https://api.notion.com/v1/databases/{database_id}/query"
@@ -18,7 +30,6 @@ def get_notion_data(token, database_id):
     data_dict = {}
     has_more = True
     next_cursor = None
-    debug_counter = 0 
     
     while has_more:
         body = {}
@@ -48,10 +59,8 @@ def get_notion_data(token, database_id):
                         elif date_prop.get("type") == "title" and date_prop.get("title"):
                             date_val = date_prop["title"][0].get("plain_text")
                             
-                    # 2. 提取数值 (增强版：专治 null 和 复杂公式)
+                    # 2. 提取数值
                     val = 0
-                    is_null_warning = False
-                    
                     if val_prop:
                         ptype = val_prop.get("type")
                         if ptype == "formula":
@@ -60,16 +69,11 @@ def get_notion_data(token, database_id):
                             
                             if f_type == "number":
                                 num_val = f_data.get("number")
-                                if num_val is None:
-                                    is_null_warning = True
-                                else:
+                                if num_val is not None:
                                     val = num_val
                             elif f_type == "string":  
                                 raw_str = f_data.get("string")
-                                if raw_str is None:
-                                    # 💡 抓到真凶！Notion 传回了真正的 null
-                                    is_null_warning = True
-                                else:
+                                if raw_str is not None:
                                     try:
                                         val = float(raw_str)
                                     except (ValueError, TypeError):
@@ -86,22 +90,6 @@ def get_notion_data(token, database_id):
                                 val = r_data["array"][0].get("number", 0)
                     
                     val = val or 0
-                    
-                    # 打印核验日志 (强化诊断版)
-                    if debug_counter < 3 and date_val:
-                        print("\n=== 🕵️‍♂️ 深度侦察：底层真实数据包 ===")
-                        print(f"当前行日期: {date_val}")
-                        print(f"【机密】Notion 传回的该列完整底层数据: {json.dumps(val_prop, ensure_ascii=False)}")
-                        
-                        if is_null_warning:
-                            print("🚨 致命警告：Notion API 传回了 null (空值)！")
-                            print("🚨 原因分析：你的公式大概率引用了其他数据库的数据。")
-                            print("🚨 解决方案：请前往 Notion，把这个机器人(Token)也邀请/连接到被引用的那个底层源数据库中！")
-                        else:
-                            print(f"【解析】代码强行解析后的结果: {val}")
-                            
-                        print("=========================================\n")
-                        debug_counter += 1
                     
                     if date_val and val > 0:
                         date_str = str(date_val).split("T")[0][:10]
@@ -129,14 +117,22 @@ def process_svg_colors(file_path, data_dict):
         date_str = date_match.group(1)
         val = float(data_dict.get(date_str, 0))
         
+        # 🔥 核心：高级色彩渐变逻辑
         if val == 0:
-            color = "#EBEDF0"
+            color = "#EBEDF0" # 原生浅灰底板
         elif val < 240:
-            color = "#D1D5DB"
+            # 0~4小时阶梯：浅灰(#E5E7EB) 到 深灰(#9CA3AF)
+            factor = val / 240.0
+            color = interpolate_color("#E5E7EB", "#9CA3AF", factor)
         elif val < 480:
-            color = "#3B82F6"
+            # 4~8小时阶梯：浅蓝(#93C5FD) 到 宝石蓝(#1D4ED8)
+            factor = (val - 240) / 240.0
+            color = interpolate_color("#93C5FD", "#1D4ED8", factor)
         else:
-            color = "#10B981"
+            # 8小时以上阶梯：薄荷绿(#6EE7B7) 到 墨绿(#047857)
+            # 我们设定12小时(720分钟)为满色，超过12小时统一显示最深的墨绿色
+            factor = min((val - 480) / 240.0, 1.0)
+            color = interpolate_color("#6EE7B7", "#047857", factor)
             
         rect_tag = re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
         title_text = f"{val:g} 分钟" if val > 0 else "0 分钟"
@@ -160,6 +156,7 @@ def main():
     real_data = get_notion_data(notion_token, database_id)
     current_year = datetime.datetime.now().year
 
+    # 我们通过指定圆润的样式颜色，生成最美观的底板（让 GitHub 原生工具只管排版和画格子）
     command = f'github_heatmap notion --notion_token "{notion_token}" --database_id "{database_id}" --date_prop_name "日期" --value_prop_name "总时长" --unit "分钟" --year {current_year} --me "学习热力图" --without-type-name --background-color="#FFFFFF" --track-color="#EBEDF0" --special-color1="#CBE2F9" --special-color2="#8AB4F8" --dom-color="#EBEDF0" --text-color="#000000"'
     
     print("🚀 正在生成基础格子画板...")
@@ -170,7 +167,9 @@ def main():
         process_svg_colors(svg_path, real_data)
         os.makedirs("study_heatmap", exist_ok=True)
         os.replace(svg_path, "study_heatmap/main.svg")
-        print("🎉 学习热力图着色与数据注入完美完成！")
+        print("🎉 高级渐变色学习热力图着色完成！")
+    else:
+        print("❌ 错误：未在 OUT_FOLDER 找到画板文件。")
 
 if __name__ == "__main__":
     main()
