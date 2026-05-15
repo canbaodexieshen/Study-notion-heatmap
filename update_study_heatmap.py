@@ -99,11 +99,12 @@ def process_svg_colors(file_path, data_dict, current_year):
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # 🔧 修复左上角的“总时长”统计，使其不再显示 0
+    # 🔧 修复左上角的“总时长”统计，使其精准显示真实的分钟数
     total_minutes = sum(data_dict.values())
+    # 匹配类似 "2026: 0 分钟" 或 "2026: 0.0 分钟" 并替换为真实时长
     content = re.sub(
-        rf'{current_year}:\s*0\s*分钟',
-        f'{current_year}: {int(total_minutes)} 分钟',
+        rf'({current_year}:\s*)[0\.]+(\s*分钟)',
+        rf'\g<1>{int(total_minutes)}\g<2>',
         content
     )
 
@@ -118,7 +119,7 @@ def process_svg_colors(file_path, data_dict, current_year):
         
         # 🌈 渐变色彩逻辑分配
         if val == 0:
-            color = "#EBEDF0" # 灰色空底
+            color = "#EBEDF0" # 空白打卡为标准灰色底
         elif val <= 240:
             # 0~4小时：浅紫白 -> 浅蓝
             factor = val / 240.0
@@ -128,7 +129,7 @@ def process_svg_colors(file_path, data_dict, current_year):
             factor = (val - 240) / 240.0
             color = interpolate_color("#60A5FA", "#1E3A8A", factor)
         else:
-            # 8小时以上：清爽绿 -> 大佬深绿 (假设最高阈值为12小时即720分钟)
+            # 8小时以上：清爽绿 -> 大佬深绿 (致敬 GitHub 绿)
             factor = min(1.0, (val - 480) / 240.0)
             color = interpolate_color("#10B981", "#064E3B", factor)
             
@@ -155,8 +156,8 @@ def main():
     real_data = get_notion_data(notion_token, database_id)
     current_year = datetime.datetime.now().year
 
-    # 💡 在这里修改你的专属大标题：--me "残暴的邪神的学习热力图"
-    command = f'github_heatmap notion --notion_token "{notion_token}" --database_id "{database_id}" --date_prop_name "日期" --value_prop_name "总时长" --unit "分钟" --year {current_year} --me "残暴的邪神的学习热力图" --without-type-name --background-color="#FFFFFF" --track-color="#EBEDF0" --dom-color="#EBEDF0" --text-color="#000000"'
+    # 💡 核心修复：完全去除了所有参数值的引号，严格复刻你 Keep 脚本里的指令格式！
+    command = f'github_heatmap notion --notion_token {notion_token} --database_id {database_id} --date_prop_name 日期 --value_prop_name 总时长 --unit 分钟 --year {current_year} --me 残暴的邪神的学习热力图 --without-type-name --background-color=#FFFFFF --track-color=#EBEDF0 --special-color1=#CBE2F9 --special-color2=#8AB4F8 --dom-color=#EBEDF0 --text-color=#000000'
     
     print("🚀 正在生成基础格子画板...")
     subprocess.run(command, shell=True, check=True, capture_output=True)
