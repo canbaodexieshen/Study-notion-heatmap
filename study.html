@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>我的学习热力图</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             margin: 0;
             padding: 0;
@@ -12,13 +16,13 @@
             flex-direction: column;
             min-height: 100vh;
             background-color: #ffffff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
             overflow: hidden;
             transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         header {
-            padding: 25px 15px 10px 15px;
+            padding: 22px 15px 8px 15px;
             display: flex;
             justify-content: flex-end;
             position: sticky;
@@ -29,29 +33,31 @@
         .controls-wrapper {
             display: flex;
             gap: 8px;
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(10px);
-            padding: 4px 10px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-            border: 1px solid rgba(0,0,0,0.05);
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 5px 12px;
+            border-radius: 14px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+            border: 1px solid rgba(0, 0, 0, 0.06);
         }
 
         select, button {
-            padding: 4px 8px;
-            border-radius: 6px;
+            padding: 4px 10px;
+            border-radius: 7px;
             border: 1px solid #ddd;
             background-color: #fff;
             font-size: 12px;
             color: #444;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
             outline: none;
+            font-family: inherit;
         }
 
         select:hover, button:hover {
             border-color: #bbb;
-            background-color: #f3f3f3;
+            background-color: #f5f5f5;
         }
 
         #heatmap-scroll-container {
@@ -59,7 +65,8 @@
             overflow: auto;
             display: flex;
             justify-content: center;
-            padding: 10px 15px 20px 15px;
+            align-items: flex-start;
+            padding: 8px 15px 20px 15px;
         }
 
         #heatmap-content {
@@ -75,47 +82,55 @@
         }
 
         .loading-text {
-            color: #999;
+            color: #aaa;
             font-size: 12px;
             text-align: center;
-            margin-top: 40px;
+            margin-top: 50px;
+            letter-spacing: 0.02em;
         }
 
-        /* ================= 针对多色图的智能黑暗模式 ================= */
+        /* ==================== 智能深色模式 ==================== */
+        /* 策略：不使用整体反色滤镜（会破坏蓝绿渐变），
+           而是通过 CSS 属性选择器精准替换 SVG 内部各颜色 */
+
         body.dark-mode {
             background-color: #191919;
         }
 
         body.dark-mode .controls-wrapper {
-            background: rgba(35, 35, 35, 0.8);
-            border-color: rgba(255,255,255,0.1);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            background: rgba(35, 35, 35, 0.9);
+            border-color: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
         }
 
-        body.dark-mode select, body.dark-mode button {
+        body.dark-mode select,
+        body.dark-mode button {
             background-color: #2c2c2c;
             color: #ccc;
             border-color: #444;
         }
 
-        /* 核心魔法：不使用反色滤镜，直接通过属性选择器替换 SVG 内部元素的颜色 */
-        
-        /* 1. 将空白格子（原始为 #EBEDF0）替换为深灰色 */
-        body.dark-mode svg rect[fill="#EBEDF0"],
+        body.dark-mode select:hover,
+        body.dark-mode button:hover {
+            background-color: #383838;
+        }
+
+        /* 1. 空白格（原 #ebedf0 / #EBEDF0 / 白色背景）→ 深灰 */
         body.dark-mode svg rect[fill="#ebedf0"],
+        body.dark-mode svg rect[fill="#EBEDF0"],
         body.dark-mode svg rect[fill="#FFFFFF"],
         body.dark-mode svg rect[fill="#ffffff"] {
             fill: #2d2d2d !important;
         }
-        
-        /* 2. 将 SVG 里的文字（月份、星期）改成浅灰色，防止在黑底上看不清 */
+
+        /* 2. SVG 文字（月份 / 星期 / 统计）→ 浅灰，防止看不见 */
         body.dark-mode svg text {
             fill: #aaaaaa !important;
         }
-        
-        /* 3. 稍微调暗整体亮度，让蓝绿色在夜间不那么刺眼 */
+
+        /* 3. 轻微压暗整体，让渐变在夜间不那么刺眼 */
         body.dark-mode svg {
-            filter: brightness(0.9);
+            filter: brightness(0.88);
         }
     </style>
 </head>
@@ -128,93 +143,89 @@
                 <option value="2024">2024年存档</option>
                 <option value="2023">2023年存档</option>
             </select>
-            <button id="theme-toggle">🌙</button>
+            <button id="theme-toggle" title="切换深色/浅色模式">🌙</button>
         </div>
     </header>
 
     <div id="heatmap-scroll-container">
         <div id="heatmap-content">
-            <p class="loading-text">获取数据中...</p>
+            <p class="loading-text">正在加载学习热力图…</p>
         </div>
     </div>
 
     <script>
-        const content = document.getElementById('heatmap-content');
-        const yearSelect = document.getElementById('year-select');
+        const content     = document.getElementById('heatmap-content');
+        const yearSelect  = document.getElementById('year-select');
         const themeToggle = document.getElementById('theme-toggle');
-        
-        // 自动设置当前年份
+
+        // 自动填入当前年份
         const currentYear = new Date().getFullYear();
         yearSelect.options[0].text = `${currentYear} (今年)`;
 
-        const params = new URLSearchParams(window.location.search);
+        // 从 URL 参数读取初始图片地址
+        const params          = new URLSearchParams(window.location.search);
         const initialImageUrl = params.get('image');
 
-        // 智能路径识别（适配新的 study_heatmap 文件夹）
-        let baseUrl = "";
+        // 智能解析 baseUrl（兼容多种目录结构）
+        let baseUrl = '';
         if (initialImageUrl) {
-            if (initialImageUrl.includes('/study_heatmap/')) {
-                baseUrl = initialImageUrl.split('/study_heatmap/')[0] + '/';
-            } else if (initialImageUrl.includes('/old_heatmap/')) {
-                 baseUrl = initialImageUrl.split('/old_heatmap/')[0] + '/';
-            } else if (initialImageUrl.includes('/OUT_FOLDER/')) {
-                 baseUrl = initialImageUrl.split('/OUT_FOLDER/')[0] + '/';
+            const markers = ['/study_heatmap/', '/old_heatmap/', '/OUT_FOLDER/'];
+            for (const m of markers) {
+                if (initialImageUrl.includes(m)) {
+                    baseUrl = initialImageUrl.split(m)[0] + '/';
+                    break;
+                }
             }
         }
 
-        // 加载函数（包含防缓存的时间戳魔法）
+        // 加载函数（附时间戳防缓存）
         function loadHeatmap(url) {
-            content.innerHTML = '<p class="loading-text">正在同步学习记录...</p>';
-            
-            // 强行打破缓存
-            const fetchUrl = url + (url.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
-            
+            content.innerHTML = '<p class="loading-text">正在同步学习记录…</p>';
+            const fetchUrl = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+
             fetch(fetchUrl)
                 .then(res => {
-                    if (!res.ok) throw new Error('该年份尚未生成存档文件');
+                    if (!res.ok) throw new Error('该年份尚无存档文件');
                     return res.text();
                 })
                 .then(svg => { content.innerHTML = svg; })
                 .catch(err => {
-                    content.innerHTML = `<p style="color:#888;text-align:center;font-size:12px;">${err.message}</p>`;
+                    content.innerHTML =
+                        `<p style="color:#888;text-align:center;font-size:12px;">${err.message}</p>`;
                 });
         }
 
         if (initialImageUrl) loadHeatmap(initialImageUrl);
 
-        // 年份切换监听
-        yearSelect.addEventListener('change', (e) => {
+        // 年份切换
+        yearSelect.addEventListener('change', e => {
             if (e.target.value === 'current') {
-                // 回到今年，加载当前 URL
                 loadHeatmap(initialImageUrl);
             } else {
-                // 切换历史，去 old_heatmap 文件夹找
-                const archiveUrl = `${baseUrl}old_heatmap/${e.target.value}.svg`;
-                loadHeatmap(archiveUrl);
+                loadHeatmap(`${baseUrl}old_heatmap/${e.target.value}.svg`);
             }
         });
 
-        // ================= 智能主题切换逻辑 =================
+        // ==================== 深色模式逻辑 ====================
         function applyTheme(isDark) {
-            if (isDark) {
-                document.body.classList.add('dark-mode');
-                themeToggle.innerText = '☀️';
-            } else {
-                document.body.classList.remove('dark-mode');
-                themeToggle.innerText = '🌙';
-            }
+            document.body.classList.toggle('dark-mode', isDark);
+            themeToggle.textContent = isDark ? '☀️' : '🌙';
+            try { localStorage.setItem('studyHeatmapTheme', isDark ? 'dark' : 'light'); } catch(e) {}
         }
 
-        const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)');
-        applyTheme(systemPrefersDark.matches); 
+        // 优先使用用户上次手动选择的主题
+        const savedTheme = (() => { try { return localStorage.getItem('studyHeatmapTheme'); } catch(e) { return null; } })();
+        const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
 
-        systemPrefersDark.addEventListener('change', e => {
-            applyTheme(e.matches);
+        applyTheme(savedTheme ? savedTheme === 'dark' : systemDark.matches);
+
+        // 跟随系统变化（仅在未手动设置时生效）
+        systemDark.addEventListener('change', e => {
+            if (!localStorage.getItem('studyHeatmapTheme')) applyTheme(e.matches);
         });
 
         themeToggle.addEventListener('click', () => {
-            const isCurrentlyDark = document.body.classList.contains('dark-mode');
-            applyTheme(!isCurrentlyDark);
+            applyTheme(!document.body.classList.contains('dark-mode'));
         });
     </script>
 </body>
