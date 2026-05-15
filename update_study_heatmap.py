@@ -6,12 +6,20 @@ import sys
 import urllib.request
 import json
 
-def get_notion_data(token, database_id):
-    """【数据层】确保 51 条记录被精准抓取"""
-    print("🔍 正在通过 API 提取 Notion 真实时长数据...")
-    url = f"https://api.notion.com/v1/databases/{database_id}/query"
+# ================= 配置区 =================
+NOTION_TOKEN = os.getenv("NOTION_TOKEN")
+DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
+YEAR = datetime.datetime.now().year
+JSON_FILE = "study_data.json"
+TITLE = "残暴的邪神的学习热力图"
+# ==========================================
+
+def get_and_save_notion_data():
+    """第一步：从 Notion 提取数据并保存为本地 JSON"""
+    print(f"🔍 正在从 Notion 提取 {YEAR} 年的真实数据...")
+    url = f"https://api.notion.com/v1/databases/{DATABASE_ID}/query"
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {NOTION_TOKEN}",
         "Notion-Version": "2022-06-28",
         "Content-Type": "application/json"
     }
@@ -60,103 +68,107 @@ def get_notion_data(token, database_id):
             print(f"❌ 数据获取失败: {e}")
             sys.exit(1)
             
-    total_found = int(sum(data_dict.values()))
-    print(f"✅ 抓取完毕：共发现 {len(data_dict)} 天有学习记录，累计 {total_found} 分钟。")
+    # 保存为本地 JSON 文件，供 github_heatmap 绘图使用
+    with open(JSON_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data_dict, f)
+    
+    print(f"✅ 数据提取成功！已保存至 {JSON_FILE}，共 {len(data_dict)} 条有效记录。")
     return data_dict
 
-def process_svg_full_render(file_path, data_dict, current_year):
-    """【渲染层】核心：强制铺设底板并上色"""
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    # 1. 强制更新顶部总时长文本 (2026: XXX 分钟)
-    total_minutes = int(sum(data_dict.values()))
-    content = re.sub(rf'({current_year}:\s*)[0\.]+(\s*分钟)', rf'\g<1>{total_minutes}\g<2>', content)
-
-    # 2. 全量格子处理逻辑
-    def rect_replacer(match):
-        rect_tag = match.group(0)
-        # 提取格子中的日期
-        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', rect_tag)
-        if not date_match:
-            return rect_tag # 背景或其他非日期格子不处理
-            
-        date_str = date_match.group(1)
-        val = float(data_dict.get(date_str, 0))
-        
-        # 🎨 GitHub 官方色阶逻辑
-        if val == 0:
-            # 💡 核心修复：如果没有数据，强制上色为原生灰色，保证底板出现！
-            color = "#EBEDF0" 
-        elif val <= 120:
-            color = "#9BE9A8" # 浅绿
-        elif val <= 300:
-            color = "#40C463" # 中绿
-        elif val <= 600:
-            color = "#30A14E" # 深绿
-        else:
-            color = "#216E39" # 极深绿
-            
-        # 替换或插入 fill 属性
-        if 'fill=' in rect_tag:
-            rect_tag = re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
-        else:
-            rect_tag = rect_tag.replace('<rect ', f'<rect fill="{color}" ')
-            
-        # 确保鼠标悬停文字显示正确
-        title_text = f"{date_str}: {int(val)} 分钟"
-        rect_tag = re.sub(r'<title>.*?</title>', f'<title>{title_text}</title>', rect_tag)
-        
-        return rect_tag
-
-    # 扫描整个 SVG，对每一个 <rect> 标签执行上面的逻辑
-    new_content = re.sub(r'<rect\b[^>]*>.*?</rect>', rect_replacer, content, flags=re.DOTALL)
+def draw_heatmap_generic():
+    """第二步：利用 github_heatmap 的 generic 模式绘图"""
+    print("🚀 正在调用 github_heatmap 通用模式绘制底板...")
     
-    # 3. 强制背景修复：确保 SVG 容器有白色背景
-    if 'style=' not in new_content:
-        new_content = new_content.replace('<svg ', '<svg style="background-color:white;" ', 1)
-
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(new_content)
-
-def main():
-    notion_token = os.getenv("NOTION_TOKEN")
-    database_id = os.getenv("NOTION_DATABASE_ID")
-    current_year = datetime.datetime.now().year
-
-    # 第一步：拿到真实数据
-    real_data = get_notion_data(notion_token, database_id)
-
-    # 第二步：调用工具生成 365 天的原生骨架
-    # 哪怕工具读到的是 0 数据，它也会根据 --year 生成全年的方块位置
+    # 注意：这里改用 generic 子命令，指定 --json_file
     command = [
-        "github_heatmap", "notion",
-        "--notion_token", str(notion_token),
-        "--database_id", str(database_id),
-        "--date_prop_name", "日期",
-        "--value_prop_name", "总时长",
+        "github_heatmap", "generic",
+        "--json_file", JSON_FILE,
+        "--year", str(YEAR),
+        "--me", TITLE,
         "--unit", "分钟",
-        "--year", str(current_year),
-        "--me", "残暴的邪神的学习热力图",
         "--without-type-name",
         "--background-color", "#FFFFFF",
-        "--track-color", "#EBEDF0", # 预设轨道颜色
+        "--track-color", "#EBEDF0",  # 显式指定灰色方块
         "--dom-color", "#EBEDF0",
         "--text-color", "#000000"
     ]
     
-    print("🚀 正在生成原生热力图骨架...")
-    subprocess.run(command, check=True)
+    try:
+        subprocess.run(command, check=True)
+        print("🎨 原生底板（The Track）已成功铺设。")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ 绘图引擎执行失败: {e}")
+        sys.exit(1)
 
-    # 第三步：缝合数据，强制渲染底板
+def apply_color_gradient(data_dict):
+    """第三步：在原生底板上精准注入渐变色和统计文字"""
+    print("💉 正在执行最终的渐变色注入...")
     svg_path = "OUT_FOLDER/notion.svg"
-    if os.path.exists(svg_path):
-        print("💉 正在执行全量底板铺设与数据注入...")
-        process_svg_full_render(svg_path, real_data, current_year)
+    if not os.path.exists(svg_path):
+        # 尝试通用模式可能的默认路径
+        svg_path = "OUT_FOLDER/generic.svg" 
+    
+    if not os.path.exists(svg_path):
+        print("❌ 未找到生成的 SVG 文件，请检查 OUT_FOLDER 目录。")
+        return
+
+    with open(svg_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # 更新顶部统计文字
+    total_minutes = int(sum(data_dict.values()))
+    content = re.sub(rf'({YEAR}:\s*)[0\.\d]+(\s*分钟)', rf'\g<1>{total_minutes}\g<2>', content)
+
+    # 渐变插值辅助函数
+    def interpolate(c1, c2, f):
+        c1_v = [int(c1[i:i+2], 16) for i in (1, 3, 5)]
+        c2_v = [int(c2[i:i+2], 16) for i in (1, 3, 5)]
+        res = [int(c1_v[i] + (c2_v[i] - c1_v[i]) * f) for i in range(3)]
+        return f"#{res[0]:02x}{res[1]:02x}{res[2]:02x}"
+
+    def rect_replacer(match):
+        rect_tag = match.group(0)
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', rect_tag)
+        if not date_match: return rect_tag
+            
+        date_str = date_match.group(1)
+        val = float(data_dict.get(date_str, 0))
         
-        os.makedirs("study_heatmap", exist_ok=True)
-        os.replace(svg_path, "study_heatmap/main.svg")
-        print("🎉 任务圆满完成！请查看 study_heatmap/main.svg")
+        if val == 0:
+            color = "#EBEDF0" # 无数据日期的标准灰
+        elif val <= 240:
+            color = interpolate("#E0E7FF", "#93C5FD", val / 240.0)
+        elif val <= 480:
+            color = interpolate("#60A5FA", "#1E3A8A", (val - 240) / 240.0)
+        else:
+            color = interpolate("#10B981", "#064E3B", min(1.0, (val - 480) / 240.0))
+            
+        return re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
+
+    content = re.sub(r'<rect\b[^>]*>.*?</rect>', rect_replacer, content, flags=re.DOTALL)
+    
+    # 强制背景层
+    if 'style=' not in content:
+        content = content.replace('<svg ', '<svg style="background-color:white;" ', 1)
+
+    with open(svg_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    # 移动文件
+    os.makedirs("study_heatmap", exist_ok=True)
+    os.replace(svg_path, "study_heatmap/main.svg")
+    print("🎉 任务圆满完成！请查看 study_heatmap/main.svg")
+
+def main():
+    # 检查环境变量
+    if not NOTION_TOKEN or not DATABASE_ID:
+        print("❌ 错误：环境变量未配置！")
+        return
+
+    # 执行三步走方案
+    data = get_and_save_notion_data()
+    draw_heatmap_generic()
+    apply_color_gradient(data)
 
 if __name__ == "__main__":
     main()
