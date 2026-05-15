@@ -7,8 +7,8 @@ import urllib.request
 import json
 
 def get_notion_data(token, database_id):
-    """【强力抓取层】确保即便公式列返回 null 也能通过逻辑解析拿到数字"""
-    print("🔍 正在通过强力引擎抓取 51 条记录中的有效时长数据...")
+    """【数据抓取层】忽略工具限制，直接从 API 提取最真实的函数列数字"""
+    print("🔍 正在通过 Notion API 提取 51 条真实学习记录...")
     url = f"https://api.notion.com/v1/databases/{database_id}/query"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -29,13 +29,12 @@ def get_notion_data(token, database_id):
                 for result in res.get("results", []):
                     props = result.get("properties", {})
                     
-                    # 1. 提取日期
+                    # 提取日期
                     date_val = None
-                    date_prop = props.get("日期")
-                    if date_prop and date_prop.get("date"):
-                        date_val = date_prop["date"].get("start")
+                    if props.get("日期") and props["日期"].get("date"):
+                        date_val = props["日期"]["date"].get("start")
                     
-                    # 2. 提取时长 (针对公式列做了特殊强化)
+                    # 提取时长 (兼容函数列返回的各种格式)
                     val = 0
                     val_prop = props.get("总时长")
                     if val_prop:
@@ -57,41 +56,48 @@ def get_notion_data(token, database_id):
                 has_more = res.get("has_more", False)
                 next_cursor = res.get("next_cursor")
         except Exception as e:
-            print(f"❌ 抓取失败，请检查机器人是否已分享给所有相关数据库: {e}")
+            print(f"❌ 抓取失败: {e}")
             sys.exit(1)
     return data_dict
 
-def inject_data_to_svg(file_path, data_dict, current_year):
-    """【精准注入层】把拿到的真实数据强行涂抹到 SVG 格子上"""
+def surgery_inject_svg(file_path, data_dict, current_year):
+    """【外科手术注入】在原生 SVG 骨架上精准填色并修改统计文字"""
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # 1. 修复标题下方的总时长显示
+    # 1. 修复原生 SVG 顶部的统计数字 (把 "2026: 0 分钟" 改成真实总数)
     total_minutes = int(sum(data_dict.values()))
     content = re.sub(rf'({current_year}:\s*)[0\.]+(\s*分钟)', rf'\g<1>{total_minutes}\g<2>', content)
 
-    # 2. 格子上色逻辑 (使用 GitHub 官方标准绿色梯度)
+    # 2. 对每个 <rect> 格子进行精准填色
+    # 原生工具生成的格子包含日期信息，我们根据这个日期匹配数据
     def rect_replacer(match):
         rect_tag = match.group(0)
+        # 从格子中提取日期 YYYY-MM-DD
         date_match = re.search(r'(\d{4}-\d{2}-\d{2})', rect_tag)
-        if not date_match: return rect_tag
+        if not date_match:
+            return rect_tag
             
         date_str = date_match.group(1)
         val = float(data_dict.get(date_str, 0))
         
-        # 按照时长分配 GitHub 标准绿 (可以根据你的习惯调整阈值)
+        # 严格执行 GitHub 标准绿色阶梯
         if val == 0:
-            color = "#EBEDF0" # 没学的日子
+            color = "#EBEDF0" # 灰色
         elif val <= 120:
-            color = "#9BE9A8" # 2小时内：浅绿
+            color = "#9BE9A8" # 浅绿
         elif val <= 300:
-            color = "#40C463" # 2-5小时：中绿
+            color = "#40C463" # 中绿
         elif val <= 600:
-            color = "#30A14E" # 5-10小时：深绿
+            color = "#30A14E" # 深绿
         else:
-            color = "#216E39" # 10小时以上：极深绿
+            color = "#216E39" # 极深绿
             
-        return re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
+        # 替换 fill 属性
+        rect_tag = re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
+        # 顺便把鼠标悬停的标题也改了
+        rect_tag = re.sub(r'<title>.*?</title>', f'<title>{date_str} {int(val)} 分钟</title>', rect_tag)
+        return rect_tag
 
     content = re.sub(r'<rect\b[^>]*>.*?</rect>', rect_replacer, content, flags=re.DOTALL)
     
@@ -103,11 +109,12 @@ def main():
     database_id = os.getenv("NOTION_DATABASE_ID")
     current_year = datetime.datetime.now().year
 
-    # 第一步：先用手工逻辑拿到那 51 条记录的真实数字
+    # 步骤 1: 独立抓取数据
     real_data = get_notion_data(notion_token, database_id)
-    print(f"✅ 抓取完成！共发现 {len(real_data)} 天有学习记录，累计 {int(sum(real_data.values()))} 分钟。")
+    print(f"📊 数据抓取成功：共计 {len(real_data)} 天有数据，总时长 {int(sum(real_data.values()))} 分钟")
 
-    # 第二步：调用工具生成“空底板”
+    # 步骤 2: 调用原生工具生成全灰色的“原生底稿”
+    # 注意：这里我们故意让它生成一张“0数据”的图，目的是要它的排版和文字
     command = [
         "github_heatmap", "notion",
         "--notion_token", notion_token,
@@ -119,20 +126,24 @@ def main():
         "--me", "残暴的邪神的学习热力图",
         "--without-type-name",
         "--background-color", "#FFFFFF",
-        "--track-color", "#EBEDF0",
+        "--track-color", "#EBEDF0", # 灰色底色
         "--dom-color", "#EBEDF0",
         "--text-color", "#000000"
     ]
+    
+    print("🎨 正在生成原生样式底稿...")
     subprocess.run(command, check=True)
 
-    # 第三步：将真实数据注入 SVG
+    # 步骤 3: 注入真实数据
     svg_path = "OUT_FOLDER/notion.svg"
     if os.path.exists(svg_path):
-        inject_data_to_svg(svg_path, real_data, current_year)
+        print("💉 正在向原生底稿注入真实数据...")
+        surgery_inject_svg(svg_path, real_data, current_year)
         
+        # 整理输出
         os.makedirs("study_heatmap", exist_ok=True)
         os.replace(svg_path, "study_heatmap/main.svg")
-        print("🎉 恭喜！数据已成功渲染，绿色格子应该已经出现了！")
+        print("🎉 完美！现在你可以去查看 study_heatmap/main.svg 了，样式和数据都对了。")
 
 if __name__ == "__main__":
     main()
