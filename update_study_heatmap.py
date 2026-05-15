@@ -119,57 +119,44 @@ def process_svg_colors(file_path, data_dict, current_year):
         
         # 🌈 渐变色彩逻辑分配
         if val == 0:
-            color = "#EBEDF0" # 空白打卡为标准灰色底
-        elif val <= 240:
-            # 0~4小时：浅紫白 -> 浅蓝
+            color = "#EBEDF0"  # 空白打卡为标准灰色底
+        elif val <= 240:  # 0~4小时：浅紫白 -> 浅蓝
             factor = val / 240.0
-            color = interpolate_color("#E0E7FF", "#93C5FD", factor)
-        elif val <= 480:
-            # 4~8小时：天蓝 -> 深邃蓝 (越接近8小时越深)
-            factor = (val - 240) / 240.0
-            color = interpolate_color("#60A5FA", "#1E3A8A", factor)
-        else:
-            # 8小时以上：清爽绿 -> 大佬深绿 (致敬 GitHub 绿)
-            factor = min(1.0, (val - 480) / 240.0)
-            color = interpolate_color("#10B981", "#064E3B", factor)
-            
-        rect_tag = re.sub(r'fill="[^"]+"', f'fill="{color}"', rect_tag)
-        title_text = f"{val:g} 分钟" if val > 0 else "0 分钟"
-        rect_tag = re.sub(r'<title>.*?</title>', f'<title>{date_str} {title_text}</title>', rect_tag)
+            color = interpolate_color("#f0f9ff", "#7dd3fc", factor)
+        else:  # >4小时：浅蓝 -> 深蓝/绿（可自定义）
+            factor = min((val - 240) / 120.0, 1.0)  # 假设最多到6小时（360分钟）
+            color = interpolate_color("#7dd3fc", "#0ea5e9", factor)
         
-        return rect_tag
+        # 替换 fill 属性
+        return re.sub(r'fill="[^"]*"', f'fill="{color}"', rect_tag)
 
-    # 全局替换每个格子的颜色
-    new_content = re.sub(r'<rect\b[^>]*>.*?</rect>', rect_replacer, content, flags=re.DOTALL)
+    # 用正则替换所有 rect 标签
+    content = re.sub(r'<rect[^>]*>', rect_replacer, content)
+
+    # 保存处理后的 SVG
+    output_path = file_path.replace(".svg", f"_processed_{current_year}.svg")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(content)
     
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(new_content)
+    print(f"✅ SVG 热力图已生成：{output_path}")
+    return output_path
 
-def main():
-    notion_token = os.getenv("NOTION_TOKEN")
-    database_id = os.getenv("NOTION_DATABASE_ID")
+# 🚀 主程序入口
+if __name__ == "__main__":
+    # ⚙️ 配置参数（请替换为你的 Notion Token 和 Database ID）
+    NOTION_TOKEN = "your_notion_token_here"
+    DATABASE_ID = "your_database_id_here"
+    SVG_TEMPLATE_PATH = "template.svg"  # 请确保当前目录有这个模板文件
 
-    if not notion_token or not database_id:
-        print("❌ 致命错误：未找到 NOTION_TOKEN 或 NOTION_DATABASE_ID！")
-        sys.exit(1)
-
-    real_data = get_notion_data(notion_token, database_id)
+    # 自动获取当前年份
     current_year = datetime.datetime.now().year
 
-    # 💡 核心修复：完全去除了所有参数值的引号，严格复刻你 Keep 脚本里的指令格式！
-    command = f'github_heatmap notion --notion_token {notion_token} --database_id {database_id} --date_prop_name 日期 --value_prop_name 总时长 --unit 分钟 --year {current_year} --me 残暴的邪神的学习热力图 --without-type-name --background-color=#FFFFFF --track-color=#EBEDF0 --special-color1=#CBE2F9 --special-color2=#8AB4F8 --dom-color=#EBEDF0 --text-color=#000000'
-    
-    print("🚀 正在生成基础格子画板...")
-    subprocess.run(command, shell=True, check=True, capture_output=True)
+    # 获取数据
+    data = get_notion_data(NOTION_TOKEN, DATABASE_ID)
 
-    svg_path = "OUT_FOLDER/notion.svg"
-    if os.path.exists(svg_path):
-        print("🎨 正在执行色彩渐变渲染引擎...")
-        process_svg_colors(svg_path, real_data, current_year)
-        
-        os.makedirs("study_heatmap", exist_ok=True)
-        os.replace(svg_path, "study_heatmap/main.svg")
-        print("🎉 渐变版学习热力图着色完成！快去看看效果吧！")
-
-if __name__ == "__main__":
-    main()
+    # 处理 SVG
+    if os.path.exists(SVG_TEMPLATE_PATH):
+        processed_svg = process_svg_colors(SVG_TEMPLATE_PATH, data, current_year)
+        print(f"🎉 完成！打开 {processed_svg} 查看你的热力图！")
+    else:
+        print(f"❌ 找不到模板文件：{SVG_TEMPLATE_PATH}，请确保它存在。")
