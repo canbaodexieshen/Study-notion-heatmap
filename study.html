@@ -200,19 +200,56 @@
             try { localStorage.setItem('studyHeatmapTheme', isDark ? 'dark' : 'light'); } catch(e) {}
         }
 
-        // 优先使用用户上次手动选择的主题
-        const savedTheme = (() => { try { return localStorage.getItem('studyHeatmapTheme'); } catch(e) { return null; } })();
+        // 1. 获取系统/Notion客户端 深色模式偏好
         const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+        
+        // 2. 获取 URL 上的强制主题参数 (如在嵌入 Notion 时链接自带 ?theme=dark)
+        const urlTheme = params.get('theme') || params.get('mode');
 
-        applyTheme(savedTheme ? savedTheme === 'dark' : systemDark.matches);
+        // 3. 获取用户在这个网页上一次手动选择的主题
+        const savedTheme = (() => { try { return localStorage.getItem('studyHeatmapTheme'); } catch(e) { return null; } })();
 
-        // 跟随系统变化（仅在未手动设置时生效）
+        // 综合判断初始状态优先级：URL传参 > 用户手动点击历史 > 系统及Notion环境
+        let isDarkMode = systemDark.matches;
+        if (urlTheme) {
+            isDarkMode = (urlTheme === 'dark');
+        } else if (savedTheme) {
+            isDarkMode = (savedTheme === 'dark');
+        }
+
+        // 应用初始主题
+        applyTheme(isDarkMode);
+
+        // 跟随系统/Notion桌面端的变化（当用户在Notion切换深浅色或系统切换深浅色时自动生效）
         systemDark.addEventListener('change', e => {
-            if (!localStorage.getItem('studyHeatmapTheme')) applyTheme(e.matches);
+            // 如果没有通过 URL 强制锁定，且用户没有手动强行干预，则跟随系统变化
+            if (!urlTheme && !localStorage.getItem('studyHeatmapTheme')) {
+                applyTheme(e.matches);
+            }
         });
 
+        // 用户手动切换按钮
         themeToggle.addEventListener('click', () => {
             applyTheme(!document.body.classList.contains('dark-mode'));
+        });
+
+        // 监听来自父窗口 (如 Notion web 网页版 / 第三方建站工具) 发送的主题切换事件
+        window.addEventListener('message', (event) => {
+            try {
+                const data = event.data;
+                let isParentDark = null;
+                
+                // 兼容主流的 iframe 主题通信格式
+                if (typeof data === 'string' && data.includes('theme')) {
+                    isParentDark = data.includes('dark');
+                } else if (data && typeof data.theme === 'string') {
+                    isParentDark = data.theme === 'dark';
+                }
+                
+                if (isParentDark !== null) {
+                    applyTheme(isParentDark);
+                }
+            } catch (e) {}
         });
     </script>
 </body>
