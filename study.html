@@ -126,9 +126,9 @@
         <div class="controls-wrapper">
             <select id="year-select">
                 <option value="current">加载中...</option>
-                <option value="2025">2025年存档</option>
-                <option value="2024">2024年存档</option>
-                <option value="2023">2023年存档</option>
+                <option value="2025">2025</option>
+                <option value="2024">2024</option>
+                <option value="2023">2023</option>
             </select>
             <button id="theme-toggle" title="切换深色/浅色模式">🌙</button>
         </div>
@@ -147,7 +147,7 @@
 
         // 自动填入当前年份
         const currentYear = new Date().getFullYear();
-        yearSelect.options[0].text = `${currentYear} (今年)`;
+        yearSelect.options[0].text = `${currentYear}`;
 
         // 从 URL 参数读取初始图片地址
         const params          = new URLSearchParams(window.location.search);
