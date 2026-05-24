@@ -106,16 +106,27 @@ def get_color_for_minutes(val):
         return interpolate_color("#10B981", "#064E3B", min(1.0, (val - 480) / 240.0))
 
 
+def format_duration(minutes):
+    """将分钟数格式化为 'X小时Y分钟'（不足1小时只显示分钟）"""
+    h = int(minutes) // 60
+    m = int(minutes) % 60
+    if h > 0:
+        return f"{h}小时{m}分钟"
+    else:
+        return f"{m}分钟"
+
+
 def process_svg_styling(file_path, data_dict, current_year):
     """对底稿 SVG 执行渐变着色，并修正年度统计文字"""
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # 1. 修正统计文字：将 "2026: 0 分钟" 替换为真实总和
+    # 1. 修正统计文字：将 "2026: 0 分钟" 替换为真实总和的时分格式
     total_minutes = int(sum(data_dict.values()))
+    total_time_str = format_duration(total_minutes)
     content = re.sub(
-        rf"({current_year}:\s*)[0-9\.]+(\s*分钟)",
-        rf"\g<1>{total_minutes}\g<2>",
+        rf"({current_year}:\s*)[0-9\.]+\s*分钟",
+        rf"\g<1>{total_time_str}",
         content,
     )
 
@@ -134,9 +145,9 @@ def process_svg_styling(file_path, data_dict, current_year):
         val = float(data_dict.get(date_str, 0))
         color = get_color_for_minutes(val)
         
-        # 更新 <title> 标签，显示"日期 - X 分钟"
+        # 更新 <title> 标签，显示"日期 - X小时Y分钟"（不足1小时只显示分钟）
         if val > 0:
-            minutes_text = f"{int(val)} 分钟"
+            minutes_text = format_duration(val)
         else:
             minutes_text = "无记录"
         rect_tag = re.sub(
