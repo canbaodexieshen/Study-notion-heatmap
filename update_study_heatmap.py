@@ -116,13 +116,15 @@ def format_duration(minutes):
         return f"{m}分钟"
 
 
-def process_svg_styling(file_path, data_dict, current_year):
-    """对底稿 SVG 执行渐变着色，并修正年度统计文字"""
+def process_svg_styling(file_path, data_dict, current_year, total_override=None):
+    """对底稿 SVG 执行渐变着色，并修正年度统计文字。
+    若提供 total_override，则用它覆盖左上角统计值（用于年度归档场景）。
+    """
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     # 1. 修正统计文字：将 "2026: 0 分钟" 替换为真实总和的时分格式
-    total_minutes = int(sum(data_dict.values()))
+    total_minutes = total_override if total_override is not None else int(sum(data_dict.values()))
     total_time_str = format_duration(total_minutes)
     content = re.sub(
         rf"({current_year}:\s*)[0-9\.]+\s*分钟",
